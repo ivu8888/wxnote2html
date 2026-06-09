@@ -9,3 +9,4 @@ build/
 *.html
 docs/
 CLAUDE.md
+*.spec
