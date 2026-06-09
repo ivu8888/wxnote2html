@@ -103,6 +103,27 @@ def main():
     )
     args = parser.parse_args()
 
+    # 解析输出格式：--format 明确指定 > -o 后缀推断 > 默认 pdf
+    if args.format is not None:
+        fmt = args.format
+    elif args.output is not None:
+        suf = Path(args.output).suffix.lower()
+        if suf in (".png", ".jpg", ".jpeg"):
+            fmt = "png"
+        elif suf == ".pdf":
+            fmt = "pdf"
+        else:
+            fmt = "html"
+    else:
+        fmt = "pdf"
+
+    # 输出文件路径
+    if args.output is not None:
+        output = Path(args.output)
+    else:
+        default_names = {"pdf": "note.pdf", "html": "note.html", "png": "note.png"}
+        output = Path(default_names[fmt])
+
     # 无参数时显示帮助
     if len(sys.argv) == 1:
         parser.print_help()
@@ -173,7 +194,6 @@ def main():
         )
 
     # ── 3. 输出 ──
-    output = Path(args.output)
     if output.suffix.lower() in (".png", ".jpg", ".jpeg"):
         stitched.save(output)
         print(f"[main] 图片已保存: {output}")
