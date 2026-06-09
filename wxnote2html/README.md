@@ -3,7 +3,7 @@
 微信笔记自动截图 → 拼接 → HTML
 
 ```
-ADB 截图 → 多图投票去UI → 约束搜索+NCC校验 → HTML(base64)
+ADB 截图 → 多图投票去UI → 约束搜索+NCC校验 → PDF/HTML(base64)
 ```
 
 ## 前置条件
@@ -26,9 +26,19 @@ pip install -r requirements.txt
 
 ```bash
 python run.py                    # 显示帮助
-python run.py --run              # 默认输出 note.html
-python run.py --run -o x.html    # 指定输出
+python run.py --run              # 默认输出 note.pdf
+python run.py --run -o x.pdf     # 指定输出
+python run.py --run -f html      # 输出 HTML 格式
 python run.py --run --debug      # 调试模式
+```
+
+### 输出格式
+
+```bash
+python run.py --run               # 默认 PDF
+python run.py --run -f html       # 输出 HTML (base64 内嵌图片)
+python run.py --run -f png        # 输出 PNG 图片
+python run.py --run -o out.pdf    # 根据后缀推断格式
 ```
 
 ### 操作步骤
@@ -42,10 +52,10 @@ python run.py --run --debug      # 调试模式
 
 ```bash
 # 已有截图，直接拼接
-python run.py --run --images ./screenshots/ -o note.html
+python run.py --run --images ./screenshots/ -o note.pdf
 
 # 输出 PNG
-python run.py --run -o stitched.png
+python run.py --run -f png -o stitched.png
 
 # 多设备时指定
 python run.py --run --device 192.168.0.100:5555
@@ -70,7 +80,7 @@ V2 拼接引擎特性：
 
 - 屏幕保持常亮，笔记页面在前台
 - 滚到底部自动停止
-- 输出为 base64 内嵌图片的 HTML，单文件即可分享
+- 默认输出 PDF 文件；也可输出 base64 内嵌图片的 HTML 或 PNG 图片
 
 ## License
 
