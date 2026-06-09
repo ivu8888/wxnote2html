@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-wxnote2html — 微信笔记自动截图 → 拼接 → HTML
+wxnote2html — 微信笔记自动截图 → 拼接 → PDF/HTML
 
 用法:
-    python run.py --run                     # 全自动模式，输出 note.html
-    python run.py --run -o my_note.html     # 指定输出文件
+    python run.py --run                     # 全自动模式，默认输出 note.pdf
+    python run.py --run -o my_note.pdf      # 指定输出文件
+    python run.py --run -f html             # 输出 HTML
     python run.py --run --images ./screens/ # 已有截图拼接
     python run.py --run --debug             # 调试模式
     python run.py                           # 显示本帮助
@@ -64,19 +65,23 @@ def _cleanup_tmp():
 
 def main():
     parser = argparse.ArgumentParser(
-        description="微信笔记截图转 HTML",
+        description="微信笔记截图转 PDF/HTML",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
-  %(prog)s --run                              # 默认输出 note.html
-  %(prog)s --run -o my_note.html              # 指定输出文件
+  %(prog)s --run                              # 默认输出 note.pdf
+  %(prog)s --run -o my_note.pdf               # 指定输出文件
+  %(prog)s --run -f html                      # 输出 HTML 格式
+  %(prog)s --run -f png -o stitched.png       # 输出 PNG 图片
   %(prog)s --run --images ./screens/          # 已有截图拼接
   %(prog)s --run --debug                      # 调试模式
   %(prog)s --run --max-screens 30             # 最多30张截图
         """,
     )
     parser.add_argument("--run", action="store_true", help="执行截图拼接（必选）")
-    parser.add_argument("-o", "--output", default="note.html", help="输出文件路径 (默认 note.html)")
+    parser.add_argument("-o", "--output", default=None, help="输出文件路径")
+    parser.add_argument("-f", "--format", choices=["pdf", "html", "png"], default=None,
+                        help="输出格式: pdf / html / png (默认 pdf)")
     parser.add_argument("--images", help="已有截图目录（按文件名排序）")
     parser.add_argument("--device", help="ADB 设备序列号")
     parser.add_argument("--max-screens", type=int, default=20, help="最大截图张数 (默认 20)")
