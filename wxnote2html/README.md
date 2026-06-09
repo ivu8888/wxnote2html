@@ -3,71 +3,74 @@
 微信笔记自动截图 → 拼接 → HTML
 
 ```
-┌──────────┐    ┌──────────┐    ┌───────────┐    ┌──────────┐
-│ ADB 控制  │───→│ 自动滚动  │───→│ 图片拼接   │───→│  HTML   │
-│ 打开笔记  │    │ 逐屏截取  │    │ 去重对齐   │    │ base64  │
-└──────────┘    └──────────┘    └───────────┘    └──────────┘
+ADB 截图 → 多图投票去UI → 约束搜索+NCC校验 → HTML(base64)
 ```
 
 ## 前置条件
 
-- Android 手机，开启 **USB 调试**
-- USB 线连电脑（或 WiFi ADB）
-- 电脑安装 Python 3.10+
-- 电脑安装 ADB 工具
+- Android 手机 + **USB 调试** + USB/WiFi 连接
+- Python 3.10+
+- ADB 工具
 
 ## 安装
 
 ```bash
+git clone https://github.com/ivu8888/wxnote2html.git
 cd wxnote2html
 pip install -r requirements.txt
 ```
 
 ## 使用
 
-### 1. 准备工作
-
-1. 手机 USB 连电脑
-2. 确认连接：
-   ```bash
-   adb devices
-   # 应显示: xxxxxxxx  device
-   ```
-3. 手机上打开微信收藏 → 打开目标笔记 → 滑到**最顶部**
-
-### 2. 一键运行
+### 基本用法
 
 ```bash
-python run.py -o note.html
+python run.py                    # 显示帮助
+python run.py --run              # 默认输出 note.html
+python run.py --run -o x.html    # 指定输出
+python run.py --run --debug      # 调试模式
 ```
 
-脚本会提示你按回车，然后自动：
-- 逐屏截图 + 滚动
-- 到达底部自动停止
-- 拼接成一张长图
-- 输出 HTML（图片内嵌为 base64）
+### 操作步骤
 
-### 3. 高级选项
+1. 手机连接电脑，确认：`adb devices`
+2. 手机上打开微信 → 收藏 → 目标笔记 → **滑到最顶部**
+3. 运行 `python run.py --run`
+4. 按回车后自动截图拼接
+
+### 其他选项
 
 ```bash
-# 已有截图，直接处理
-python run.py --images ./screenshots/ -o note.html
+# 已有截图，直接拼接
+python run.py --run --images ./screenshots/ -o note.html
 
-# 指定设备（多台手机时）
-python run.py --device 1234567890 -o note.html
+# 输出 PNG
+python run.py --run -o stitched.png
 
-# 输出 PNG 图片
-python run.py -o stitched.png
+# 多设备时指定
+python run.py --run --device 192.168.0.100:5555
 
-# 保存原始截图到目录（调试）
-python run.py --save-screenshots ./debug/ -o note.html
+# 调试：详细日志 + 匹配调试图 + tmp/debug.log
+python run.py --run --debug
 ```
+
+## 拼接引擎
+
+V2 拼接引擎特性：
+
+- **多图投票** 检测顶部微信 UI 和底部导航栏
+- **约束搜索** [0.1× ~ 2.0× expected] + NCC 60行连续校验
+- **FR-7 兜底** 滑动窗口中位数 → 全局搜索 → 几何估算
+- **FR-8 钳制** overlap 越界自动防护
+- **自适应滚动** 基于内容高度计算滚动距离，适配不同屏幕
+- **per-pair 滚动距离** 每次滚动独立追踪
+- **流式内存** 100张截图峰值不超过 200MB
 
 ## 注意事项
 
-- 手机屏幕**不要锁屏**，保持笔记页面在前台
-- 滚到底部会自动停止（检测连续两张截图相似度）
-- 截图分辨率为手机原始分辨率，拼接图可能很大
+- 屏幕保持常亮，笔记页面在前台
+- 滚到底部自动停止
+- 输出为 base64 内嵌图片的 HTML，单文件即可分享
 
 ## License
 
