@@ -53,6 +53,15 @@ def _encode_image(img: Image.Image, fmt: str = "PNG") -> str:
     return base64.b64encode(buf.getvalue()).decode("ascii")
 
 
+def _cleanup_tmp():
+    """清理 tmp/ 目录中的缓存图片"""
+    import shutil
+    tmp = Path("tmp")
+    if tmp.is_dir():
+        shutil.rmtree(tmp)
+        print("[main] 已清理 tmp/ 缓存")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="微信笔记截图转 HTML",
@@ -172,6 +181,10 @@ img{{max-width:100%;height:auto;box-shadow:0 2px 10px rgba(0,0,0,0.1)}}</style>
 </head><body><img src="data:image/png;base64,{b64}" alt="微信笔记"></body></html>"""
         output.write_text(html, encoding="utf-8")
         print(f"[main] HTML 已保存: {output}")
+
+    # 非 debug 模式清理 tmp/ 缓存
+    if not args.debug:
+        _cleanup_tmp()
 
 
 if __name__ == "__main__":
