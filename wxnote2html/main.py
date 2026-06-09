@@ -194,10 +194,13 @@ def main():
         )
 
     # ── 3. 输出 ──
-    if output.suffix.lower() in (".png", ".jpg", ".jpeg"):
-        stitched.save(output)
+    if fmt == "pdf":
+        stitched.save(output, format="PDF")
+        print(f"[main] PDF 已保存: {output}")
+    elif fmt == "png":
+        stitched.save(output, format="PNG")
         print(f"[main] 图片已保存: {output}")
-    else:
+    else:  # html
         b64 = _encode_image(stitched)
         html = f"""<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>微信笔记</title>
