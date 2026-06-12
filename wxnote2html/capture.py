@@ -197,6 +197,24 @@ class ADBCapture:
             img = self.screenshot()
             screenshots.append(img)
 
+            # ── 动态调整下次滚动距离 ──
+            # 检查截图底部内容区是否切到文字，是则缩短、否则恢复
+            target_scroll = int(content_h * (1 - overlap_ratio))
+            if not _bottom_has_text(img):
+                scroll_distance = min(
+                    scroll_distance + int(scroll_distance * 0.10),
+                    target_scroll,
+                )
+            else:
+                scroll_distance = max(
+                    scroll_distance - int(scroll_distance * 0.03),
+                    int(screen_h * 0.50),
+                )
+                if debug and save_dir is not None:
+                    _capture_log(save_path,
+                        f"[动态] 切到文字, 下次滚动→{scroll_distance}px",
+                    )
+
             if save_dir is not None:
                 img.save(save_path / f"screen_{i:03d}.png")
 
@@ -210,16 +228,43 @@ class ADBCapture:
 
             # 检查是否到达底部
             if self.images_similar(screenshots[-1], screenshots[-2], threshold=0.985):
-                print(f"[capture] 检测到已到达底部，停止截图")
                 if debug and save_dir is not None:
                     _capture_log(save_path,
-                        f"[截屏 {i+1:02d}] 与上一张相同 → 到达底部, 丢弃",
+                        f"[截屏 {i+1:02d}] 与上一张相同 → 到达底部",
                     )
+                # 丢弃重复截图，尝试用小滚动距离补截剩余内容
                 screenshots.pop()
                 scroll_distances.pop()
                 cumulative_scroll -= dist
                 if save_dir is not None:
                     (save_path / f"screen_{i:03d}.png").unlink(missing_ok=True)
+
+                # 用缩小到 1/3 的滚动距离再试一次
+                retry_scroll = max(scroll_distance // 3, int(screen_h * 0.1))
+                retry_dist = self.scroll_down(distance=retry_scroll)
+                time.sleep(pause_ms / 1000.0)
+                retry_img = self.screenshot()
+
+                if self.images_similar(retry_img, screenshots[-1], threshold=0.985):
+                    print(f"[capture] 检测到已到达底部，停止截图")
+                    if debug and save_dir is not None:
+                        _capture_log(save_path,
+                            f"[截屏 {i+1:02d}] 小滚动后仍相同 → 确认到达底部",
+                        )
+                    break
+
+                # 小滚动截到新内容 → 追加为最后一张
+                scroll_distances.append(retry_dist)
+                cumulative_scroll += retry_dist
+                screenshots.append(retry_img)
+                if save_dir is not None:
+                    retry_img.save(save_path / f"screen_{i:03d}.png")
+
+                print(f"  [{i+1}] 小滚动({retry_scroll}px)补截剩余内容")
+                if debug and save_dir is not None:
+                    _capture_log(save_path,
+                        f"[截屏 {i+1:02d}] 小滚动={retry_scroll}px 补截  位置: y={cumulative_scroll}",
+                    )
                 break
 
         print(f"[capture] 完成，共 {len(screenshots)} 张, 滚动序列={scroll_distances}")
@@ -262,6 +307,28 @@ def _estimate_content_height(first_img: Image.Image) -> int:
     # footer 粗略估算（导航栏等）
     footer_est = min(80, int(H * 0.04))
     return H - header_h - footer_est
+
+
+def _bottom_has_text(img: Image.Image) -> bool:
+    """
+    检查截图底部内容区是否切到了文字。
+    查看底部 ~8% 区域（排除 footer），动态计算阈值。
+    """
+    gray = np.array(img.convert("L"), dtype=np.float32)
+    H = gray.shape[0]
+
+    check_h = max(int(H * 0.08), 60)
+    row_stds = np.std(gray[-check_h:, :], axis=1)
+
+    blank_baseline = float(np.percentile(row_stds, 15))
+    text_threshold = max(blank_baseline * 2.5, 8.0)
+
+    # 底部区域前半部分有高 std → 文字被切
+    check_n = len(row_stds) // 2
+    for i in range(check_n):
+        if row_stds[i] > text_threshold:
+            return True
+    return False
 
 
 def save_screenshots(images: list[Image.Image], output_dir: Path):

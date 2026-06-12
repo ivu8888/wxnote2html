@@ -173,12 +173,51 @@ def detect_footer(images: list[Image.Image], last_image: Image.Image) -> int:
     return footer_h
 
 
-def crop_image(img: Image.Image, header: int, footer: int) -> Image.Image:
-    """裁剪单张图的顶部和底部"""
+def detect_scrollbar(images: list[Image.Image]) -> int:
+    """
+    多图投票检测右侧滚动条宽度。
+
+    从第 2 张图开始（首张无滚动条），从右边缘向左扫描列 std，
+    找到 std 骤降处作为滚动条边界。多图中位数投票，适配不同分辨率。
+
+    Returns:
+        滚动条宽度 (px)，未检测到则返回 0
+    """
+    N = min(len(images), 8)
+    if N < 2:
+        return 0
+
+    candidates: list[int] = []
+    max_scan = max(int(images[0].width * 0.03), 15)  # 搜索右边缘 3% 宽度
+
+    for i in range(1, N):  # 从第 2 张开始（首张无滚动条）
+        gray = np.array(images[i].convert("L"), dtype=np.float32)
+        W = gray.shape[1]
+
+        # 从右向左扫描
+        for offset in range(max_scan):
+            col = gray[:, W - 1 - offset]
+            col_std = float(np.std(col))
+            if col_std < 6.0 and offset > 0:
+                # std 骤降 → 滚动条边界
+                candidates.append(offset)
+                break
+
+    if not candidates:
+        return 0
+
+    scrollbar_w = int(np.median(candidates))
+    print(f"  [stitch_v2] scrollbar 多图投票: {scrollbar_w}px (候选={candidates})")
+    return scrollbar_w
+
+
+def crop_image(img: Image.Image, header: int, footer: int, right_crop: int = 0) -> Image.Image:
+    """裁剪单张图的顶部、底部和右侧"""
     top = header
     bottom = img.height - footer if footer > 0 else img.height
-    if bottom > top:
-        return img.crop((0, top, img.width, bottom))
+    right = img.width - right_crop if right_crop > 0 else img.width
+    if bottom > top and right > 0:
+        return img.crop((0, top, right, bottom))
     return img
 
 
@@ -382,6 +421,109 @@ def match_overlap(
     return overlap, conf
 
 
+def _match_last_pair(
+    top_gray: np.ndarray,
+    bottom_gray: np.ndarray,
+    expected: int,
+    history: list[int] | None,
+    cropped_h: int,
+    scroll_dist: int | None,
+    max_ratio: float,
+    debug: bool = False,
+) -> tuple[int, float]:
+    """
+    特殊处理最后一张图的 overlap 检测 — 双向模板匹配。
+
+    正向: 底部图的顶部 60 行 → 在顶部图下半部搜索 (适用于正常重叠)
+    反向: 顶部图的底部 60 行 → 在底部图上半部搜索 (适用于巨大重叠,
+          因为顶部图底部是内容密集区, 模板辨识度远高于底部图顶部的稀疏区)
+
+    综合双向候选 + 放宽 NCC(30 行) + 综合评分。
+    """
+    if not HAS_CV2:
+        return expected, 0.5
+
+    H = top_gray.shape[0]
+    # 模板高度按图像比例计算 (3%)，适配不同分辨率手机
+    th = max(30, int(H * 0.03))
+    th = min(th, bottom_gray.shape[0])
+    # NCC 要求也按比例 (1.5%)，保证至少 15 行
+    ncc_required = max(15, int(H * 0.015))
+
+    # ── 正向: 底部图顶部模板 → 顶部图搜索 ──
+    fwd_scores = []
+    template_fwd = bottom_gray[:th, :]
+    fwd_search_start = int(H * 0.05)
+    fwd_search_end = H - th
+    if fwd_search_end > fwd_search_start:
+        fwd_region = top_gray[fwd_search_start:fwd_search_end, :]
+        fwd_result = cv2.matchTemplate(fwd_region, template_fwd, cv2.TM_CCOEFF_NORMED)
+        fwd_raw = fwd_result.ravel()
+        top_k = min(3, len(fwd_raw))
+        top_idx = np.argpartition(fwd_raw, -top_k)[-top_k:]
+        top_idx = top_idx[np.argsort(fwd_raw[top_idx])][::-1]
+        for idx in top_idx:
+            corr = float(fwd_raw[idx])
+            if corr >= 0.3:
+                ov = H - (fwd_search_start + idx)
+                fwd_scores.append((ov, corr, "fwd"))
+
+    # ── 反向: 顶部图底部模板 → 底部图搜索 ──
+    rev_scores = []
+    template_rev = top_gray[-th:, :]
+    # 搜索底部图上半部分: 0 ~ 95% (overlap ≤ 底部图高度)
+    rev_search_end = bottom_gray.shape[0] - th
+    if rev_search_end > 0:
+        rev_region = bottom_gray[:rev_search_end, :]
+        rev_result = cv2.matchTemplate(rev_region, template_rev, cv2.TM_CCOEFF_NORMED)
+        rev_raw = rev_result.ravel()
+        top_k = min(3, len(rev_raw))
+        top_idx = np.argpartition(rev_raw, -top_k)[-top_k:]
+        top_idx = top_idx[np.argsort(rev_raw[top_idx])][::-1]
+        for idx in top_idx:
+            corr = float(rev_raw[idx])
+            if corr >= 0.3:
+                # overlap = 模板在底部图中的位置 + 模板高度
+                ov = int(idx) + th
+                rev_scores.append((ov, corr, "rev"))
+
+    # ── 合并所有候选, NCC 验证 ──
+    all_candidates = fwd_scores + rev_scores
+    if not all_candidates:
+        ov = _clamp_overlap(expected, bottom_gray.shape[0], max_ratio)
+        return ov, 0.5
+
+    best_ov = expected
+    best_score = 0.0
+
+    for ov, corr, direction in all_candidates:
+        # 放宽 NCC 要求：30 行连续非空白
+        conf = _verify_ncc(top_gray, bottom_gray, ov, required=ncc_required)
+        # 反向匹配在巨大重叠时更可靠 → 加权
+        dir_weight = 1.1 if direction == "rev" else 1.0
+        score = (corr * 0.4 + conf * 0.6) * dir_weight
+        if debug:
+            print(f"  [stitch_v2] last_pair[{direction}] ov={ov} corr={corr:.3f} ncc={conf:.2f} score={score:.2f}")
+        if score > best_score:
+            best_score = score
+            best_ov = ov
+
+    if best_score > 0:
+        ov = _clamp_overlap(best_ov, bottom_gray.shape[0], max_ratio)
+        return ov, min(1.0, max(0.5, best_score))
+
+    # 最终兜底
+    geo_ov = max(0, cropped_h - scroll_dist) if scroll_dist is not None else expected
+    if history:
+        fallback = max(int(np.median(history)), geo_ov)
+    else:
+        fallback = max(expected, geo_ov)
+    ov = _clamp_overlap(fallback, bottom_gray.shape[0], max_ratio)
+    if debug:
+        print(f"  [stitch_v2] last_pair兜底 ov={ov}")
+    return ov, 0.5
+
+
 def blend_seam(
     canvas: np.ndarray,
     new_strip: np.ndarray,
@@ -459,20 +601,22 @@ def stitch(
             f"图片数: {N}  分辨率: {W}×{H}",
         )
 
-    # ── 阶段1: 采样检测 header / footer ──
+    # ── 阶段1: 采样检测 header / footer / scrollbar ──
     sample_n = min(N, 10)
     sample = images[:sample_n]
     header_h = detect_header(sample)
     footer_h = detect_footer(sample, images[-1])
+    scrollbar_w = detect_scrollbar(sample)
 
     cropped_h = H - header_h - footer_h
     if debug:
-        print(f"[stitch_v2] header={header_h}px footer={footer_h}px")
+        print(f"[stitch_v2] header={header_h}px footer={footer_h}px scrollbar={scrollbar_w}px")
         _write_log(str(tmp_dir),
-            f"Header: {header_h}px  Footer: {footer_h}px  裁剪后高度: {cropped_h}px",
+            f"Header: {header_h}px  Footer: {footer_h}px  Scrollbar: {scrollbar_w}px  "
+            f"裁剪后: {W - scrollbar_w}×{cropped_h}px",
             "",
         )
-    print(f"[stitch_v2] 裁剪后内容高度: {cropped_h}px")
+    print(f"[stitch_v2] 裁剪后内容: {W - scrollbar_w}×{cropped_h}px")
 
     # ── 阶段2: 流式拼接 ──
     canvas: np.ndarray | None = None
@@ -497,7 +641,7 @@ def stitch(
     history: list[int] = []
 
     for i, img in enumerate(images):
-        cropped = crop_image(img, header_h, footer_h)
+        cropped = crop_image(img, header_h, footer_h, right_crop=scrollbar_w)
         gray = np.array(cropped.convert("L"))
         color = np.array(cropped.convert("RGB"))
 
@@ -511,6 +655,7 @@ def stitch(
             canvas = color
         else:
             is_first = (i == 1)
+            is_last = (i == N - 1)
             ov, conf = match_overlap(
                 prev_gray, gray, expected,
                 history=history if history else None,
@@ -519,6 +664,21 @@ def stitch(
                 debug=debug,
                 debug_dir=str(tmp_dir),
             )
+
+            # 特殊处理最后一张图：全范围搜索 + 放宽 NCC
+            if is_last and conf < 0.8:
+                last_sd = scroll_distances[i - 1] if scroll_distances and i - 1 < len(scroll_distances) else None
+                if debug:
+                    print(f"  [stitch_v2] 最后一张图 conf={conf:.2f}, 启用全范围搜索")
+                ov, conf = _match_last_pair(
+                    prev_gray, gray, expected,
+                    history=history if history else None,
+                    cropped_h=cropped_h,
+                    scroll_dist=last_sd,
+                    max_ratio=max_ratio,
+                    debug=debug,
+                )
+
             tag = "OK" if conf >= 0.8 else ("WARN" if conf >= 0.5 else "LOW")
             print(f"  [{i}] overlap={ov}px conf={conf:.2f} {tag}")
 
