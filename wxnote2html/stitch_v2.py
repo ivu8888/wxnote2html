@@ -588,6 +588,13 @@ def stitch(
 
     H, W = images[0].height, images[0].width
     N = len(images)
+    # 校验所有截图尺寸一致（防止混入已裁剪的旧图）
+    for idx, img in enumerate(images):
+        if img.size != (W, H):
+            raise ValueError(
+                f"截图尺寸不一致: 第1张={W}×{H}, 第{idx+1}张={img.size[0]}×{img.size[1]}。"
+                f"是否混入了已裁剪的旧图(cropped_*.png)?"
+            )
     print(f"[stitch_v2] 开始拼接: {N} 张, {W}×{H}")
 
     # 确保 tmp 目录存在
