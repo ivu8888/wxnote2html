@@ -70,11 +70,16 @@ class ADBCapture:
     def get_screen_size(self) -> tuple[int, int]:
         """获取屏幕分辨率 (宽, 高)"""
         result = self._adb("shell", "wm", "size")
-        # output: Physical size: 1080x2400
-        line = result.stdout.strip()
-        size_str = line.split(":")[-1].strip()
-        w, h = size_str.split("x")
-        return int(w), int(h)
+        # output 可能多行，逐行找含 "x" 的行
+        for line in result.stdout.strip().split("\n"):
+            line = line.strip()
+            if "x" in line and not line.startswith("error"):
+                size_str = line.split(":")[-1].strip()
+                w, h = size_str.split("x")
+                return int(w), int(h)
+        raise RuntimeError(
+            f"无法解析屏幕尺寸, raw output:\n{result.stdout}\nstderr:\n{result.stderr}"
+        )
 
     def screenshot(self) -> Image.Image:
         """截取当前屏幕，返回 PIL Image"""
