@@ -84,7 +84,7 @@ def main():
                         help="输出格式: pdf / html / png (默认 pdf)")
     parser.add_argument("--images", help="已有截图目录（按文件名排序）")
     parser.add_argument("--device", help="ADB 设备序列号")
-    parser.add_argument("--max-screens", type=int, default=20, help="最大截图张数 (默认 20)")
+    parser.add_argument("--max-screens", type=int, default=200, help="最大截图张数 (默认 200)")
     parser.add_argument("--scroll-distance", type=int, help="每次滚动距离(px)")
     parser.add_argument("--no-blend", action="store_true", help="禁用拼接缝融合")
     parser.add_argument("--save-screenshots", help="保存原始截图到自定义目录")
