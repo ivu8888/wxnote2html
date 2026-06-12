@@ -138,6 +138,8 @@ def main():
             print(f"错误: 目录不存在: {img_dir}")
             sys.exit(1)
         files = sorted(img_dir.glob("*.png"), key=_natural_key) + sorted(img_dir.glob("*.jpg"), key=_natural_key)
+        # 排除 stitch 过程产生的中间文件（cropped_/match_），防止二次加载
+        files = [f for f in files if not f.name.startswith(("cropped_", "match_"))]
         if not files:
             print(f"错误: 目录中没有 png/jpg 文件: {img_dir}")
             sys.exit(1)
