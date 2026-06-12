@@ -207,7 +207,8 @@ def main():
         html = f"""<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>微信笔记</title>
 <style>body{{margin:0;background:#f5f5f5;text-align:center}}
-img{{max-width:100%;height:auto;box-shadow:0 2px 10px rgba(0,0,0,0.1)}}</style>
+img{{display:block;margin:0 auto;image-rendering:pixelated;image-rendering:crisp-edges;
+max-width:100%;height:auto}}</style>
 </head><body><img src="data:image/png;base64,{b64}" alt="微信笔记"></body></html>"""
         output.write_text(html, encoding="utf-8")
         print(f"[main] HTML 已保存: {output}")
